@@ -1,0 +1,12 @@
+CrystFEL unit cell file version 1.0
+
+lattice_type = tetragonal
+centering = P
+unique_axis = c
+a = 67.288 A
+b = 67.288 A
+c = 106.582 A
+al = 90.0 deg
+be = 90.0 deg
+ga = 90.0 deg
+
