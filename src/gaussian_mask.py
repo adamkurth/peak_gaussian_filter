@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import label_finder 
 
-from scipy.ndimage import gaussian_filter 
+# from scipy.ndimage import gaussian_filter 
 
 
 def load_data(choice):
@@ -33,7 +33,25 @@ def parse_arguments():
     parser.add_argument('--b', type=float, default=0.8, help='Gaussian scale factor for y-axis')
     return parser.parse_args()
     
-def gaussian_mask(image_data, a, b):
+def gaussian_filter(x, y, sigma_x, sigma_y):
+    """
+    Calculate a 2D Gaussian filter.
+
+    Parameters:
+        x (numpy.ndarray): X-axis values.
+        y (numpy.ndarray): Y-axis values.
+        sigma_x (float): Standard deviation along the X-axis.
+        sigma_y (float): Standard deviation along the Y-axis.
+
+    Returns:
+        numpy.ndarray: 2D Gaussian filter.
+    """
+    gaussian = np.exp(-(x ** 2 / (2 * sigma_x ** 2) + y ** 2 / (2 * sigma_y ** 2)))    
+    gaussian /= gaussian.max()
+    return gaussian
+    
+def gaussian_mask(image_data, params):
+    a, b = params
     image_shape = image_data.shape
     center_x, center_y = image_shape[1] / 2, image_shape[0] / 2
     
@@ -42,15 +60,11 @@ def gaussian_mask(image_data, a, b):
     y = np.linspace(0, image_shape[0] - 1, image_shape[0])
     x, y = np.meshgrid(x - center_x, y - center_y)
     
-    # standard deviation
+    # standard deviation    
     sigma_x = image_shape[1] / (2.0 * a)
     sigma_y = image_shape[0] / (2.0 * b)
-    
-    # calculate standard deviation
-    sigma_x = image_data.shape[1] / (2*a) 
-    sigma_y = image_data.shape[0] / (2*b)
-    
-    gaussian_mask = np.exp(-(((x)**2 / (2 * sigma_x**2)) + ((y)**2 / (2 * sigma_y**2))))
+
+    gaussian_mask = gaussian_filter(x, y, sigma_x, sigma_y)    
     return gaussian_mask
     
 def display_data(data, img_threshold=0.004):
@@ -127,7 +141,7 @@ def display_mask(image_data, mask):
     plt.title('Elliptical Gaussian Mask')
     plt.show()
 
-def display_mask_3d(image_data, mask, peaks, params=(1.0,0.8), img_threshold=0.0004):
+def display_mask_3d(image_data, mask, peaks, params=(1.0, 0.8), img_threshold=0.0004, visualize='both'):
     a, b = params
     shape = image_data.shape
     
@@ -147,16 +161,23 @@ def display_mask_3d(image_data, mask, peaks, params=(1.0,0.8), img_threshold=0.0
     y_filtered = y_data[mask]
     z_filtered = z_data[mask]
     
-    # plot 
+    # Calculate the Gaussian filter values
+    sigma_x = shape[1] / (2 * a)
+    sigma_y = shape[0] / (2 * b)
+    gaussian = gaussian_filter(x - shape[1] / 2, y - shape[0] / 2, sigma_x, sigma_y)
+    
+    # Create a figure and 3D axes
     fig = plt.figure(figsize=(14, 7))
     ax = fig.add_subplot(111, projection='3d')
     
-    # Plot the Gaussian filter as a heatmap
-    gaussian_surf = ax.plot_surface(x, y, gaussian_filter, cmap='viridis', linewidth=0, antialiased=True, alpha=0.6)
-
-    # Scatter plot of the filtered image data points on top of the Gaussian filter
-    data_scatter = ax.scatter(x_filtered, y_filtered, z_filtered, c='blue', marker='o', alpha=0.7, label='Filtered Data')
-
+    if visualize == 'data' or visualize == 'both':
+        # Scatter plot of the filtered image data points
+        data_scatter = ax.scatter(x_filtered, y_filtered, z_filtered, c='blue', marker='o', alpha=0.7, label='Filtered Data')
+    
+    if visualize == 'filter' or visualize == 'both':
+        # Plot the Gaussian filter as a heatmap
+        gaussian_surf = ax.plot_surface(x, y, gaussian, cmap='viridis', linewidth=0, antialiased=True, alpha=0.6)
+    
     # Highlight peaks if they are present
     if peaks:
         peak_x, peak_y = zip(*peaks)
@@ -171,23 +192,29 @@ def display_mask_3d(image_data, mask, peaks, params=(1.0,0.8), img_threshold=0.0
 
     # Add a color bar for the Gaussian heatmap
     mappable = plt.cm.ScalarMappable(cmap='viridis')
-    mappable.set_array(gaussian_filter)
+    mappable.set_array(gaussian)
     cbar = plt.colorbar(mappable, shrink=0.5, aspect=5, ax=ax)
     cbar.set_label('Gaussian Filter Intensity')
 
     ax.legend()
 
     plt.show()
-
-
+    
 def check_corners(mask):
     print("Corner values of the mask:")
     print(f"Top left: {mask[0, 0]}, Top right: {mask[0, -1]}, Bottom left: {mask[-1, 0]}, Bottom right: {mask[-1, -1]}")
+
+def apply_mask(image_data, mask, params=(1.0, 0.8)):
+    a, b = params
+    gaussian_mask(image_data, params=(a, b))
+    masked_image = image_data * mask 
+    return masked_image
 
 def main():
     args = parse_arguments()
     a = args.a
     b = args.b
+    params = (a, b)
     print(f'Using mask parameters: a={a}, b={b}\n')
     
     # loading and finding peaks above threshold
@@ -206,13 +233,17 @@ def main():
     # display_scaled(image_data)
     # display_peaks(image_data, peaks)
     
-    mask = gaussian_mask(image_data, a, b)
-    
+    mask = gaussian_mask(image_data, params)
+
+    # display methods for mask
+    # display_mask_3d(image_data, mask, peaks, (a,b), img_threshold=0.0004, gaussian_filter=gaussian_filter)
     # display_mask(image_data, mask)
-    display_mask_3d(image_data, mask, peaks, (a,b))
+    # display_mask_3d(image_data, mask, peaks, (a,b), visualize='both')
+    # display_mask_3d(image_data, mask, peaks, (a,b), visualize='filter')
+
     # check_corners(mask)
+    masked_image = apply_mask(image_data, mask, params)
 
-
-
+    
 if __name__ == "__main__":
     main()
