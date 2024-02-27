@@ -10,6 +10,8 @@ from scipy.signal import find_peaks, peak_prominences, peak_widths
 from skimage import filters
 from skimage.filters import median
 from skimage.morphology import disk
+from skimage.util import img_as_float
+from skimage.exposure import rescale_intensity
 
 from collections import namedtuple
 
@@ -67,46 +69,82 @@ class GaussianMask:
         except Exception as e:
             raise OSError(f"Failed to read {image_path}: {e}")
     
-    def _find_peaks(self):
+    def _find_peaks(self, use_1d=False):
         """
-        Finds peaks in the loaded image using a series of processing steps.
-
-        Returns:
-            list: A list of refined peak coordinates.
+        This function processes the loaded image to find and refine peaks.
+        It first reduces noise using a median filter, then applies a Gaussian mask.
+        After initial peak detection, it refines the peaks based on prominence and width criteria.
         """
-        # refine what we consider a peak
-        # Pre-process the image to reduce noise
-        #   disk: radius of the disk-shaped footprint, in pixels
-        #   median: median filter
+        # Noise reduction
         denoised_image = median(self.loaded_image, disk(self.args.median_filter_size))
-
-        # apply gaussian mask 
+        # Gaussian mask application
         masked_image = self._apply(denoised_image)
-
-        # find PeakThresholdProcessor to find initial peaks
-        p = PeakThresholdProcessor(masked_image)
-        initial_peaks = p.get_local_maxima()
-
+        # Initial peak detection
+        coordinates = peak_local_max(masked_image, min_distance=self.args.min_distance)
+        # Peak refinement
+        if use_1d:
+            refined_peaks = self._refine_peaks_1d(masked_image)
+        else: 
+            refined_peaks = self._refine_peaks_2d(masked_image, coordinates)
+        return refined_peaks
+    
+    def _refine_peaks(self, masked_image, coordinates):
+        """
+        Refines detected peaks using the prominence and width criteria.
+        Extracts a region around each peak and analyzes it to determine the true peaks.
+        """
         refined_peaks = []
-        # Further refine peaks using prominence and width criteria
-        for peak in initial_peaks:
-            x, y = peak
+        for coord in coordinates:
+            x, y = coord
             peak_region = ArrayRegion(masked_image)
             region = peak_region.extract_region(x, y, self.args.region_size)
-
-            # calculate peak properties in region
+            # Peak property calculation 
             peaks, properties = find_peaks(region, prominence=self.args.prominence, width=self.args.width)
-
-            # If peak properties meet criteria, consider it a true peak
-            # if peaks.size (number of peaks) is greater than 0 
+            # Peak confirmation based on prominence and width
             if peaks.size > 0:
-                # calculate prominence and width of peaks
                 prominences = peak_prominences(region, peaks)
                 widths = peak_widths(region, peaks)
-                # checks if any of the calculated prominences are greater than the minimum prominence 
-                # and if any of the calculated widths are greater than the minimum width
                 if np.any(prominences > self.args.min_prominence) and np.any(widths > self.args.min_width):
                     refined_peaks.append((x, y))
+        return refined_peaks
+    
+    def _refine_peaks_2d(self, images, coordinates):
+        """
+        Refines detected peaks in a 2D image based on custom criteria.
+        """
+        threshold = self.args.threshold_value
+        refined_peaks = []
+        image = self.loaded_image
+        for x, y in coordinates:
+            # Extract a small region around the peak
+            region = image[max(0, x-10):x+10, max(0, y-10):y+10]
+            
+            # Example criterion: Check if the peak is significantly brighter than the median of its surrounding
+            if image[x, y] > np.median(region) + threshold:
+                refined_peaks.append((x, y))
+        return refined_peaks
+
+    def _refine_peaks_1d(self, image, axis=0):
+        """
+        Applies 1D peak refinement to each row or column of the image.
+        axis=0 means each column is treated as a separate 1D signal; axis=1 means each row.
+        """
+        refined_peaks = []
+        num_rows, num_columns = image.shape
+        for index in range(num_columns if axis == 0 else num_rows):
+            # Extract a row or column based on the specified axis
+            signal = image[:, index] if axis == 0 else image[index, :]
+            
+            # Find peaks in this 1D signal
+            peaks, _ = find_peaks(signal, prominence=self.args.prominence, width=self.args.width)
+            
+            # Store refined peaks with their original coordinates
+            for peak in peaks:
+                if axis == 0:
+                    refined_peaks.append((peak, index))  # For columns
+                else:
+                    refined_peaks.append((index, peak))  # For rows
+                    
         return refined_peaks
     
     def _apply(self, image=None):
@@ -178,7 +216,44 @@ class GaussianMask:
     
         plt.legend()
         plt.show()
+    
+    def _display_peak_finding(self):
+        """
+        Visualizes the peak finding process by displaying the original,
+        denoised, Gaussian masked images, and the final image with refined peaks.
+        """
+        def normalize(image): # for visualization
+            return (image - np.min(image)) / (np.max(image) - np.min(image))
         
+        # Denoise the image and normalize
+        denoised_image = median(self.loaded_image, disk(self.args.median_filter_size))
+        norm_denoised_image = normalize(denoised_image)
+        
+        # Apply Gaussian mask and normalize
+        gaussian_masked_image = self._apply(denoised_image)
+        norm_gaussian_masked_image = normalize(gaussian_masked_image)
+    
+        # Perform peak detection and refinement
+        refined_peaks = self._find_peaks()  # Ensure this returns 2D peak coordinates        
+            
+        fig, axs = plt.subplots(1, 4, figsize=(20, 5), subplot_kw={'xticks': [], 'yticks': []})
+        
+        axs[0].imshow(normalize(self.loaded_image), cmap='viridis')
+        axs[0].set_title('Original Image')
+        
+        axs[1].imshow(norm_denoised_image, cmap='viridis')
+        axs[1].set_title('Denoised Image')
+        
+        axs[2].imshow(norm_gaussian_masked_image, cmap='viridis')
+        axs[2].set_title('Gaussian Masked Image')
+        
+        axs[3].imshow(norm_gaussian_masked_image, cmap='viridis')
+        axs[3].scatter([y for x, y in refined_peaks], [x for x, y in refined_peaks], color='r', s=50, marker='x')
+        axs[3].set_title('Refined Peaks')
+        
+        plt.tight_layout()
+        plt.show()
+                
     def _display_masked_image(self):
         masked_image = self._apply()
         plt.imshow(masked_image, cmap='viridis')

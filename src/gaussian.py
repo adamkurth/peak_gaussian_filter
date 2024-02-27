@@ -17,8 +17,7 @@ masked_image = g._apply()
 threshold = 1000
 a = pkg.ArrayRegion(image)
 p = pkg.PeakThresholdProcessor(image, threshold)
-coords = p.get_local_maxima()
-# g._display_peaks_2d()
-g._display_peaks_3d()
+refined_peaks = g._find_peaks()
 
-
+# display mehtods 
+g._display_peak_finding()
