@@ -30,6 +30,7 @@ class PeakThresholdProcessor:
         shape = self.image_array.shape
         rows, cols = shape
         return (index // cols, index % cols) 
+    
 class ArrayRegion:
     def __init__(self, array):
         self.array = array
