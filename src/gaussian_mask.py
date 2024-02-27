@@ -6,9 +6,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import label_finder 
 
-# from scipy.ndimage import gaussian_filter 
-
-
 def load_data(choice):
     if choice: # whether at work or not
         file_path = 'images/DATASET1-1.h5'

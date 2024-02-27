@@ -2,3 +2,4 @@ sim/1IC6.pdb-sorted.mtz
 sim/1IC6.pdb.mtz
 sim/*.mtz
 sim/__pycache__
+src/__pycache__
