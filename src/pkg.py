@@ -17,16 +17,16 @@ from collections import namedtuple
 class GaussianMask:
     def __init__(self):
         self.cxfel_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        self.images_dir = self._walk()
-        self.args = self._args()
+        self.images_dir = self.walk()
+        self.args = self.args()
         self.params = (self.args.a, self.args.b)
-        self.loaded_image, self.image_path = self._load_h5(self.images_dir)
+        self.loaded_image, self.image_path = self.load_h5(self.images_dir)
         self.mask = self.gaussian_mask()
-        self.masked_image = self._apply()
-        self.peaks = self._find_peaks(use_1d=False)
+        self.masked_image = self.apply()
+        self.peaks = self.find_peaks(use_1d=False)
 
     @staticmethod
-    def _args():
+    def args():
         parser = argparse.ArgumentParser(description='Apply a Gaussian mask to an HDF5 image and detect peaks with noise reduction')
         # Gaussian mask parameters
         parser.add_argument('--a', type=float, default=1.0, help='Gaussian scale factor for x-axis', required=False)
@@ -44,7 +44,7 @@ class GaussianMask:
         parser.add_argument('--region_size', type=int, default=9, help='Size of the region to extract around each peak for analysis', required=False)
         return parser.parse_args()
         
-    def _walk(self):
+    def walk(self):
         # returns images/ directory
         start = self.cxfel_root
         for root, dirs, files in os.walk(start):
@@ -52,7 +52,7 @@ class GaussianMask:
                 return os.path.join(root, "images")
         raise Exception("Could not find the 'images' directory starting from", start)
 
-    def _load_h5(self, image_dir):
+    def load_h5(self, image_dir):
         # choose images with "processed" in the name for better visuals
         image_files = [f for f in os.listdir(image_dir) if f.endswith('.h5') and 'processed' in f]
         if not image_files:
@@ -69,7 +69,7 @@ class GaussianMask:
             raise OSError(f"Failed to read {image_path}: {e}")
 
     
-    def _find_peaks(self, use_1d=False):
+    def find_peaks(self, use_1d=False):
         """
         This function processes the loaded image to find and refine peaks.
         It first reduces noise using a median filter, then applies a Gaussian mask.
@@ -79,25 +79,25 @@ class GaussianMask:
         # Noise reduction
         denoised_image = median(self.loaded_image, disk(self.args.median_filter_size))
         # Gaussian mask application
-        masked_image = self._apply(denoised_image)
+        masked_image = self.apply(denoised_image)
         # Initial peak detection
         #   coordinates output from peak_local_max (not necissarily peaks)
         coordinates = peak_local_max(masked_image, min_distance=self.args.min_distance) 
         # Peak refinement
-        refined_peaks = self._refine_peaks(masked_image, coordinates, use_1d)
+        refined_peaks = self.refine_peaks(masked_image, coordinates, use_1d)
         return refined_peaks
     
-    def _refine_peaks(self, image, coordinates, use_1d=False):
+    def refine_peaks(self, image, coordinates, use_1d=False):
         """
         Unified function to refine detected peaks using either 1D or 2D criteria.
         Extracts a region around each peak and analyzes it to determine the true peaks.
         """
         if use_1d:
-            return self._refine_peaks_1d(image)
+            return self.refine_peaks_1d(image)
         else:
-            return self._refine_peaks_2d(image, coordinates)
+            return self.refine_peaks_2d(image, coordinates)
     
-    def _refine_peaks_1d(self, image, axis=0):
+    def refine_peaks_1d(self, image, axis=0):
         """
         Applies 1D peak refinement to each row or column of the image.
         axis=0 means each column is treated as a separate 1D signal; axis=1 means each row.
@@ -119,7 +119,7 @@ class GaussianMask:
                     refined_peaks.append((index, peak))  # For rows
         return refined_peaks
     
-    def _refine_peaks_2d(self, image, coordinates):
+    def refine_peaks_2d(self, image, coordinates):
         """
         Refines detected peaks in a 2D image based on custom criteria.
         """
@@ -140,12 +140,12 @@ class GaussianMask:
                     refined_peaks.append((x, y))
             return refined_peaks
     
-    def _apply(self, image=None):
+    def apply(self, image=None):
         if image is None:
             image = self.loaded_image
         return image * self.mask
  
-    def _check_corners(self):
+    def check_corners(self):
         print("Corner values of the mask:")
         print(f"Top left: {self.mask[0, 0]}, Top right: {self.mask[0, -1]},\n Bottom left: {self.mask[-1, 0]}, Bottom right: {self.mask[-1, -1]}\n\n")
 
@@ -167,20 +167,20 @@ class PeakThresholdProcessor:
         self.image_array = image_array
         self.threshold_value = threshold_value
     
-    def _set_threshold_value(self, new_threshold_value):
+    def set_threshold_value(self, new_threshold_value):
         self.threshold_value = new_threshold_value
     
-    def _get_coordinates_above_threshold(self):  
+    def get_coordinates_above_threshold(self):  
         coordinates = np.argwhere(self.image_array > self.threshold_value)
         return coordinates
     
-    def _get_local_maxima(self):
+    def get_local_maxima(self):
         image_1d = self.image_array.flatten()
         peaks, _ = find_peaks(image_1d, height=self.threshold_value)
         coordinates = [self.flat_to_2d(idx) for idx in peaks]
         return coordinates
         
-    def _flat_to_2d(self, index):
+    def flat_to_2d(self, index):
         shape = self.image_array.shape
         rows, cols = shape
         return (index // cols, index % cols) 
@@ -192,26 +192,26 @@ class ArrayRegion:
         self.y_center = 0
         self.region_size = 9 
     
-    def _set_peak_coordinate(self, x, y):
+    def set_peak_coordinate(self, x, y):
         self.x_center = x
         self.y_center = y
     
-    def _set_region_size(self, size):
+    def set_region_size(self, size):
         #limit that is printable in terminal
         self.region_size = size
         max_printable_region = min(self.array.shape[0], self.array.shape[1]) //2
         self.region_size = min(size, max_printable_region)
     
-    def _get_region(self):
+    def get_region(self):
         x_range = slice(self.x_center - self.region_size, self.x_center + self.region_size+1)
         y_range = slice(self.y_center - self.region_size, self.y_center + self.region_size+1)
         region = self.array[x_range, y_range]
         return region
 
-    def _extract_region(self, x_center, y_center, region_size):
-        self._set_peak_coordinate(x_center, y_center)
-        self._set_region_size(region_size)
-        region = self._get_region()
+    def extract_region(self, x_center, y_center, region_size):
+        self.set_peak_coordinate(x_center, y_center)
+        self.set_region_size(region_size)
+        region = self.get_region()
         # Set print options for better readability
         np.set_printoptions(precision=8, suppress=True, linewidth=120, edgeitems=7)
         return region
@@ -221,14 +221,13 @@ class Visualize:
     def __init__(self, gaussian_instance):
         self.gaussian = gaussian_instance
         self.loaded_image = self.gaussian.loaded_image
-        self.peaks = self.gaussian._find_peaks(use_1d=False)
+        self.peaks = self.gaussian.find_peaks(use_1d=False)
 
-        
     def _normalize(self, image):
         min_val, max_val = np.min(image), np.max(image)
         return (image - min_val) / (max_val - min_val)
     
-    def _display_images(self):
+    def display_images(self):
         # shows original, denoised, masked image, refined peaks
         refined_peaks = self.peaks 
         # plotting 
@@ -253,7 +252,7 @@ class Visualize:
         plt.tight_layout()
         plt.show()
 
-    def _display_peak_regions(self):
+    def display_peak_regions(self):
         # visualizes normalized image and regions around three arbitrary peaks
         # Uses ArrayRegion class to extract regions around peaks
         # implemented exlusion diameter
@@ -283,9 +282,9 @@ class Visualize:
         # display peak regions 
         for i, (x,y) in enumerate(peak_regions, start=1):
             a = ArrayRegion(self.gaussian.loaded_image)
-            a._set_peak_coordinate(x, y)
-            a._set_region_size(self.gaussian.args.region_size)
-            region = a._extract_region(x_center=x, y_center=y, region_size=self.gaussian.args.region_size)
+            a.set_peak_coordinate(x, y)
+            a.set_region_size(self.gaussian.args.region_size)
+            region = a.extract_region(x_center=x, y_center=y, region_size=self.gaussian.args.region_size)
             norm_region = self._normalize(region)
             axs[i].imshow(norm_region, cmap='viridis')
             axs[i].set_title(f'Peak Region {i}')
@@ -293,7 +292,7 @@ class Visualize:
         plt.tight_layout()
         plt.show()
         
-    def _display_mask(self):
+    def display_mask(self):
         image, mask = self.loaded_image, self.gaussian.mask
         if image.shape[0] != 0 and image.shape[1] != 0:
             shape = image.shape
@@ -305,7 +304,7 @@ class Visualize:
         plt.title('Elliptical Gaussian Mask')
         plt.show()
                     
-    def _display_masked_image(self):
+    def display_masked_image(self):
         masked_image = self.gaussian.masked_image
         normalized_image = self._normalize(masked_image)  # Normalize the masked image
         plt.imshow(normalized_image, cmap='viridis')
@@ -313,7 +312,7 @@ class Visualize:
         plt.title('Normalized Masked Image')
         plt.show()
         
-    def _display_peaks_2d(self, img_threshold=0.005):
+    def display_peaks_2d(self, img_threshold=0.005):
         # for visualization exclusion diameter is okay
         image, peaks = self.loaded_image, self.peaks
         plt.figure(figsize=(10, 10))
@@ -330,7 +329,7 @@ class Visualize:
         plt.ylabel('Y-axis (fs)')
         plt.show()
         
-    def _display_peaks_3d(self, img_threshold=0.005):
+    def display_peaks_3d(self, img_threshold=0.005):
         image, peaks = self.loaded_image, self.peaks
         fig = plt.figure(figsize=(15, 10))
         ax = fig.add_subplot(111, projection='3d')
